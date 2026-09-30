@@ -187,6 +187,13 @@ pub struct TemplateError {
     pub message: String,
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct RenamePrompt {
+    pub target: AgentPane,
+    pub value: String,
+    pub error: Option<String>,
+}
+
 impl TemplateError {
     fn new(location: impl Into<String>, error: &ParseError) -> Self {
         Self {
@@ -289,6 +296,7 @@ pub struct SidebarApp {
     suppress_resize_once: bool,
     /// Filter mode: show all agents or only those in the host tmux session.
     pub filter_mode: SidebarFilterMode,
+    pub(super) rename_prompt: Option<RenamePrompt>,
 }
 
 impl SidebarApp {
@@ -347,6 +355,7 @@ impl SidebarApp {
             resize_deadline: None,
             suppress_resize_once: false,
             filter_mode: SidebarFilterMode::default(),
+            rename_prompt: None,
         }
     }
 
@@ -426,6 +435,7 @@ impl SidebarApp {
             resize_deadline: None,
             suppress_resize_once: false,
             filter_mode: SidebarFilterMode::default(),
+            rename_prompt: None,
         })
     }
 
@@ -721,6 +731,27 @@ impl SidebarApp {
             // Signal daemon directly to bypass tmux hook round-trip latency
             super::daemon_ctrl::signal_daemon();
         }
+    }
+
+    pub fn begin_rename(&mut self) {
+        let Some(index) = self.list_state.selected() else {
+            return;
+        };
+        let Some(target) = self.agents.get(index).cloned() else {
+            return;
+        };
+        let current = match crate::git::get_repo_root_for(&target.path) {
+            Ok(root) => root
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| target.window_name.clone()),
+            Err(_) => target.window_name.clone(),
+        };
+        self.rename_prompt = Some(RenamePrompt {
+            target,
+            value: current,
+            error: None,
+        });
     }
 
     pub fn toggle_layout_mode(&mut self) {

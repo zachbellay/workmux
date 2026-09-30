@@ -451,6 +451,7 @@ pub fn render_sidebar(f: &mut Frame, app: &mut SidebarApp) {
     if app.position == crate::config::SidebarPosition::Top {
         render_horizontal_bar(f, app, area);
         render_exit_confirmation(f, app);
+        render_rename_prompt(f, app);
         return;
     }
 
@@ -502,6 +503,48 @@ pub fn render_sidebar(f: &mut Frame, app: &mut SidebarApp) {
     }
 
     render_exit_confirmation(f, app);
+    render_rename_prompt(f, app);
+}
+
+fn render_rename_prompt(f: &mut Frame, app: &SidebarApp) {
+    let Some(prompt) = &app.rename_prompt else {
+        return;
+    };
+    let terminal = f.area();
+    let width = 68.min(terminal.width);
+    let mut lines = vec![Line::from(vec![
+        Span::styled("Name: ", Style::default().fg(app.palette.dimmed)),
+        Span::styled(
+            format!("{}▏", prompt.value),
+            Style::default().fg(app.palette.text),
+        ),
+    ])];
+    if let Some(error) = &prompt.error {
+        lines.push(Line::from(Span::styled(
+            truncate_to_width(error, width.saturating_sub(4) as usize),
+            Style::default().fg(app.palette.danger),
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        "Enter rename · Esc cancel",
+        Style::default().fg(app.palette.dimmed),
+    )));
+    let height = (lines.len() as u16 + 2).min(terminal.height);
+    let area = Rect::new(
+        terminal.x + terminal.width.saturating_sub(width) / 2,
+        terminal.y + terminal.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    let block = Block::bordered()
+        .title(" Rename session ")
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(app.palette.help_border));
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Paragraph::new(lines).block(block).wrap(Wrap { trim: true }),
+        area,
+    );
 }
 
 fn render_exit_confirmation(f: &mut Frame, app: &SidebarApp) {

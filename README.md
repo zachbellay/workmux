@@ -1815,6 +1815,8 @@ The sidebar displays:
 | `g`/`G` | Jump to first/last     |
 | `v`     | Toggle layout mode     |
 | `f`     | Toggle session filter  |
+| `z`     | Toggle sleeping on agent |
+| `r`     | Rename selected worktree |
 | `q`     | Open quit confirmation |
 
 With tmux mouse mode enabled (`set -g mouse on`), click an agent row or top-bar

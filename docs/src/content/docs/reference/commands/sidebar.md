@@ -33,7 +33,12 @@ Each agent row displays:
 | `v`     | Toggle layout mode       |
 | `f`     | Toggle session filter    |
 | `z`     | Toggle sleeping on agent |
+| `r`     | Rename selected worktree |
 | `q`     | Open quit confirmation   |
+
+Press `r` to edit the selected worktree or tmux window/session name. Press
+`Enter` to apply or `Esc` to cancel. The Git branch name stays the same. For
+the main worktree, only the selected tmux window is renamed.
 
 ## Mouse support
 

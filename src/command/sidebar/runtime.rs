@@ -11,6 +11,7 @@ use crossterm::{
 };
 use ratatui::backend::CrosstermBackend;
 use std::io;
+use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -18,6 +19,7 @@ use std::time::Duration;
 use crate::cmd::Cmd;
 use crate::multiplexer::{create_backend, detect_backend};
 use crate::shell::shell_quote;
+use crate::{config::Config, git};
 
 use super::app::{HostIdentity, SidebarApp};
 use super::client;
@@ -347,6 +349,11 @@ fn handle_key_press(
     code: KeyCode,
     modifiers: crossterm::event::KeyModifiers,
 ) {
+    if app.rename_prompt.is_some() {
+        handle_rename_key(app, code, modifiers);
+        return;
+    }
+
     if app.pending_exit {
         if code == KeyCode::Char('y') {
             app.quit_reason = Some("confirmed user exit".to_string());
@@ -371,8 +378,92 @@ fn handle_key_press(
         (KeyCode::Char('v'), _) => app.toggle_layout_mode(),
         (KeyCode::Char('z'), _) => app.toggle_sleeping(),
         (KeyCode::Char('f'), _) => app.toggle_filter_mode(),
+        (KeyCode::Char('r'), _) => app.begin_rename(),
         _ => {}
     }
+}
+
+fn handle_rename_key(
+    app: &mut SidebarApp,
+    code: KeyCode,
+    modifiers: crossterm::event::KeyModifiers,
+) {
+    match code {
+        KeyCode::Esc => app.rename_prompt = None,
+        KeyCode::Char('a') if modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+            if let Some(prompt) = &mut app.rename_prompt {
+                prompt.value.clear();
+                prompt.error = None;
+            }
+        }
+        KeyCode::Backspace => {
+            if let Some(prompt) = &mut app.rename_prompt {
+                prompt.value.pop();
+                prompt.error = None;
+            }
+        }
+        KeyCode::Enter => {
+            let Some(prompt) = app.rename_prompt.clone() else {
+                return;
+            };
+            match rename_selected(app, &prompt.target, &prompt.value) {
+                Ok(()) => {
+                    app.rename_prompt = None;
+                    super::daemon_ctrl::signal_daemon();
+                }
+                Err(err) => {
+                    if let Some(current) = &mut app.rename_prompt {
+                        current.error = Some(err.to_string());
+                    }
+                }
+            }
+        }
+        KeyCode::Char(ch) if modifiers.is_empty() => {
+            if let Some(prompt) = &mut app.rename_prompt {
+                prompt.value.push(ch);
+                prompt.error = None;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn rename_selected(
+    app: &SidebarApp,
+    target: &crate::multiplexer::AgentPane,
+    new_name: &str,
+) -> anyhow::Result<()> {
+    let new_name = new_name.trim();
+    anyhow::ensure!(!new_name.is_empty(), "Name cannot be empty");
+    let repo_root = git::get_repo_root_for(&target.path)?;
+    let (config, config_location) = Config::load_with_location_from(&repo_root, None)?;
+    let context = crate::workflow::WorkflowContext::new_in(
+        &repo_root,
+        config,
+        std::sync::Arc::clone(&app.mux),
+        config_location,
+    )?;
+    if context.is_main_worktree(&repo_root) {
+        let target_window = format!("{}:{}", target.session, target.window_name);
+        return app.mux.rename_window(&target_window, new_name);
+    }
+
+    let old_handle = repo_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Could not determine the selected worktree name"))?;
+    let executable = std::env::current_exe()?;
+    let output = Command::new(executable)
+        .args(["rename", old_handle, new_name])
+        .current_dir(&repo_root)
+        .output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let message = if stderr.is_empty() { stdout } else { stderr };
+        anyhow::bail!("{}", message);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
